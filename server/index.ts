@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync,
 import { join } from "node:path";
 import * as Y from "yjs";
 import { Server } from "@hocuspocus/server";
-
+import { loadComments, newMessageId, newThreadId, saveComments, type CommentMessage, type CommentThread } from "./comments.js";
 const DATA_DIR = join(process.cwd(), "data");
 const DOCS_DIR = join(DATA_DIR, "docs");
 const TREE_FILE = join(DATA_DIR, "tree.json");
@@ -377,6 +377,103 @@ const api = createServer(async (req, res) => {
       }
     }
 
+
+    // --- Comments ---
+    if (method === "GET" && path === "/api/comments") {
+      const docId = url.searchParams.get("docId");
+      if (!docId) {
+        json(res, 400, { error: "docId required" });
+        return;
+      }
+      json(res, 200, loadComments(docId));
+      return;
+    }
+
+    if (method === "POST" && path === "/api/comments/threads") {
+      const body = JSON.parse((await readBody(req)) || "{}");
+      const { docId, anchor, anchorText = "", author = "Anonymous", authorColor = "#2563eb" } = body;
+      if (!docId || !anchor) {
+        json(res, 400, { error: "docId and anchor required" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const thread = {
+        id: newThreadId(),
+        docId: String(docId),
+        anchor: String(anchor),
+        anchorText: String(anchorText),
+        author: String(author),
+        authorColor: String(authorColor),
+        resolved: false,
+        createdAt: now,
+        updatedAt: now,
+        messages: [] as CommentMessage[],
+      };
+      const threads = loadComments(docId);
+      threads.push(thread);
+      saveComments(docId, threads);
+      json(res, 201, thread);
+      return;
+    }
+
+    if (path.startsWith("/api/comments/threads/")) {
+      const suffix = path.slice("/api/comments/threads/".length);
+      const parts = suffix.split("/");
+      const threadId = decodeURIComponent(parts[0]);
+      const docIdParam = url.searchParams.get("docId");
+      if (!docIdParam) {
+        json(res, 400, { error: "docId required" });
+        return;
+      }
+      const all = loadComments(docIdParam);
+      const idx = all.findIndex((t) => t.id === threadId);
+      if (idx === -1) {
+        json(res, 404, { error: "Thread not found" });
+        return;
+      }
+      const thread = all[idx];
+
+      if (method === "POST" && parts[1] === "messages") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const { author = "Anonymous", authorColor = "#2563eb", body: text } = body;
+        if (!text || !String(text).trim()) {
+          json(res, 400, { error: "body required" });
+          return;
+        }
+        const now = new Date().toISOString();
+        const msg: CommentMessage = {
+          id: newMessageId(),
+          author: String(author),
+          authorColor: String(authorColor),
+          body: String(text).trim(),
+          createdAt: now,
+        };
+        thread.messages.push(msg);
+        thread.updatedAt = now;
+        all[idx] = thread;
+        saveComments(docIdParam, all);
+        json(res, 201, msg);
+        return;
+      }
+
+      if (method === "PATCH") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        if (typeof body.resolved === "boolean") thread.resolved = body.resolved;
+        if (typeof body.anchorText === "string") thread.anchorText = String(body.anchorText);
+        thread.updatedAt = new Date().toISOString();
+        all[idx] = thread;
+        saveComments(docIdParam, all);
+        json(res, 200, thread);
+        return;
+      }
+
+      if (method === "DELETE") {
+        all.splice(idx, 1);
+        saveComments(docIdParam, all);
+        res.writeHead(204).end();
+        return;
+      }
+    }
     json(res, 404, { error: "Not found" });
   } catch (error) {
     json(res, 500, { error: error instanceof Error ? error.message : "Server error" });
