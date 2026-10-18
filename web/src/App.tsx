@@ -24,15 +24,20 @@ function loadCollapsed(): Set<string> {
   }
 }
 
+function docIdFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get("doc");
+}
+
 export default function App() {
   const [tree, setTree] = useState<Tree>({ folders: [], docs: [] });
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(docIdFromUrl);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [name, setName] = useState(() => localStorage.getItem("openquip:name") ?? "");
   const [color, setColor] = useState(
     () => localStorage.getItem("openquip:color") ?? randomColor()
   );
   const [naming, setNaming] = useState(false);
+  const [shareNotice, setShareNotice] = useState("");
   const [pendingNew, setPendingNew] = useState<{
     kind: "doc" | "folder";
     parentId: string | null;
@@ -56,6 +61,20 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("openquip:collapsed", JSON.stringify([...collapsed]));
   }, [collapsed]);
+
+  // Keep the URL in sync so docs are deep-linkable / shareable.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeId) url.searchParams.set("doc", activeId);
+    else url.searchParams.delete("doc");
+    window.history.replaceState(null, "", url.toString());
+  }, [activeId]);
+
+  // Open the doc from the URL once the tree has loaded.
+  useEffect(() => {
+    const fromUrl = docIdFromUrl();
+    if (fromUrl && tree.docs.some((d) => d.id === fromUrl)) setActiveId(fromUrl);
+  }, [tree]);
 
   const toggleCollapsed = (folderId: string) =>
     setCollapsed((prev) => {
@@ -209,7 +228,25 @@ export default function App() {
       </aside>
       <main className="main">
         {activeDoc ? (
-          <Editor key={activeDoc.id} docId={activeDoc.id} user={{ name, color }} />
+          <>
+            <div className="doc-header">
+              <span className="doc-header-title">{activeDoc.title}</span>
+              <button
+                className="btn ghost"
+                onClick={() => {
+                  const link = `${window.location.origin}/?doc=${encodeURIComponent(activeDoc.id)}`;
+                  void navigator.clipboard?.writeText(link).catch(() => undefined);
+                  setShareNotice("Link copied");
+                  window.setTimeout(() => setShareNotice(""), 2000);
+                }}
+                title="Copy a shareable link to this document"
+              >
+                🔗 Share
+              </button>
+              {shareNotice && <span className="share-notice">{shareNotice}</span>}
+            </div>
+            <Editor key={activeDoc.id} docId={activeDoc.id} user={{ name, color }} />
+          </>
         ) : (
           <div className="empty">
             <h2>Select or create a document</h2>
