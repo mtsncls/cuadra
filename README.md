@@ -18,14 +18,18 @@ npm run dev
 
 Open http://localhost:5173 — open the same doc in two browser tabs to see live collaboration.
 
-## Features (MVP)
+## Features
 
 - Folders: nested, unlimited depth, expand/collapse (persisted per browser)
 - Sidebar tree: folders + documents, alphabetical, drag & drop to move/nest
 - Inline create/rename (no native dialogs); delete moves docs to `data/trash`
-- Multiple documents with rich text: headings, bold/italic/strike, lists, quotes, code blocks
+- Documents with rich text: headings, bold/italic/strike, lists, quotes, code blocks
 - Task lists with checkboxes (Quip-style todos)
 - Real-time multiplayer editing with named, colored cursors
+- Comments anchored to text: highlight in the document, threads, replies, resolve/delete
+- Presence bar listing everyone in the document, with "follow" mode that tracks a collaborator's caret
+- Spreadsheets as a second document kind: live-synced grid with formulas (`=SUM(A1:A5)`, `=A1*B2`)
+- Deep-linkable documents (`/?doc=<id>`) and a Share button that copies the link
 - Durable storage on disk (`data/tree.json` metadata + `data/docs/*.ydoc`)
 
 ## REST API
@@ -36,9 +40,14 @@ Open http://localhost:5173 — open the same doc in two browser tabs to see live
 | POST | `/api/folders` | Create folder `{ name, parentId }` |
 | PATCH | `/api/folders/:id` | Rename or move `{ name?, parentId? }` |
 | DELETE | `/api/folders/:id` | Delete folder; children move to its parent |
-| POST | `/api/docs` | Create doc `{ title, parentId }` |
+| POST | `/api/docs` | Create doc `{ title, parentId, kind }` (`kind: "doc" \| "sheet"`) |
 | PATCH | `/api/docs/:id` | Rename or move `{ title?, parentId? }` |
 | DELETE | `/api/docs/:id` | Delete doc (moved to `data/trash`) |
+| GET  | `/api/comments?docId=:id` | List comment threads for a document |
+| POST | `/api/comments/threads` | Create a thread `{ docId, anchor, anchorText, author, authorColor }` |
+| POST | `/api/comments/threads/:id/messages?docId=` | Add a reply |
+| PATCH | `/api/comments/threads/:id?docId=` | Update a thread `{ resolved?, anchorText? }` |
+| DELETE | `/api/comments/threads/:id?docId=` | Delete a thread |
 
 Folder moves are cycle-checked server-side: a folder can never become its own descendant.
 
@@ -52,8 +61,7 @@ Folder moves are cycle-checked server-side: a folder can never become its own de
 
 ## Roadmap ideas
 
-- Comments/threads anchored to text
-- Folder organization + share permissions
-- Spreadsheet module
-- Presence list + follow mode
-- Auth (multi-user accounts)
+- Share permissions (per-user access control; today links are open to anyone with the URL)
+- Auth with real multi-user accounts (today identity is a local display name)
+- Comment notifications and @-mentions
+- Sheet charts, more functions and column/row resizing
