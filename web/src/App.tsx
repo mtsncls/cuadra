@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import Editor from "./Editor";
 import SheetEditor from "./SheetEditor";
 import Notifications from "./Notifications";
+import { getStored, setStored } from "./storage";
 import Sidebar, {
   type DocMeta,
   type DragPayload,
@@ -20,7 +21,7 @@ function randomColor(): string {
 
 function loadCollapsed(): Set<string> {
   try {
-    return new Set<string>(JSON.parse(localStorage.getItem("openquip:collapsed") ?? "[]"));
+    return new Set<string>(JSON.parse(getStored("collapsed") ?? "[]"));
   } catch {
     return new Set<string>();
   }
@@ -34,9 +35,9 @@ export default function App() {
   const [tree, setTree] = useState<Tree>({ folders: [], docs: [] });
   const [activeId, setActiveId] = useState<string | null>(docIdFromUrl);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
-  const [name, setName] = useState(() => localStorage.getItem("openquip:name") ?? "");
+  const [name, setName] = useState(() => getStored("name") ?? "");
   const [color, setColor] = useState(
-    () => localStorage.getItem("openquip:color") ?? randomColor()
+    () => getStored("color") ?? randomColor()
   );
   const [naming, setNaming] = useState(false);
   const [shareNotice, setShareNotice] = useState("");
@@ -56,12 +57,12 @@ export default function App() {
 
   useEffect(() => {
     if (!name) return;
-    localStorage.setItem("openquip:name", name);
-    localStorage.setItem("openquip:color", color);
+    setStored("name", name);
+    setStored("color", color);
   }, [name, color]);
 
   useEffect(() => {
-    localStorage.setItem("openquip:collapsed", JSON.stringify([...collapsed]));
+    setStored("collapsed", JSON.stringify([...collapsed]));
   }, [collapsed]);
 
   // Keep the URL in sync so docs are deep-linkable / shareable.
@@ -156,7 +157,7 @@ export default function App() {
     return (
       <div className="onboarding">
         <div className="onboarding-card">
-          <h1>OpenQuip</h1>
+          <h1>Cuadra</h1>
           <p>Free collaborative docs &amp; checklists.</p>
           <p>What should we call you?</p>
           <form
@@ -188,7 +189,7 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <span className="logo">OpenQuip</span>
+          <span className="logo">Cuadra</span>
           <span className="header-actions">
             <Notifications
               me={name}

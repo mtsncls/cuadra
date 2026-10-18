@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { getStored, setStored } from "./storage";
 
 interface Thread extends Record<string, unknown> {
   id: string;
@@ -45,7 +46,7 @@ export default function Notifications({ me, onOpenDoc }: Props) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [open, setOpen] = useState(false);
   const [seenAt, setSeenAt] = useState(() =>
-    Number(localStorage.getItem("openquip:notificationsSeen") ?? 0)
+    Number(getStored("notificationsSeen") ?? 0)
   );
 
   useEffect(() => {
@@ -72,7 +73,7 @@ export default function Notifications({ me, onOpenDoc }: Props) {
     setOpen((v) => !v);
     if (!open) {
       const now = Date.now();
-      localStorage.setItem("openquip:notificationsSeen", String(now));
+      setStored("notificationsSeen", String(now));
       setSeenAt(now);
     }
   };

@@ -154,7 +154,7 @@ export default function Sidebar({
       e.preventDefault();
       e.stopPropagation();
       setDragOver(null);
-      const raw = e.dataTransfer.getData("application/x-openquip");
+      const raw = e.dataTransfer.getData("application/x-cuadra");
       if (!raw) return;
       try {
         onMove(JSON.parse(raw) as DragPayload, targetParentId);
@@ -168,7 +168,7 @@ export default function Sidebar({
     return {
       draggable: true,
       onDragStart: (e: React.DragEvent) => {
-        e.dataTransfer.setData("application/x-openquip", JSON.stringify(payload));
+        e.dataTransfer.setData("application/x-cuadra", JSON.stringify(payload));
         e.dataTransfer.effectAllowed = "move";
       },
     };

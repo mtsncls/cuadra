@@ -187,7 +187,7 @@ function seedIfEmpty(): void {
   tree.folders.push({ id: "getting-started", name: "Getting started", parentId: null, createdAt: now });
   tree.docs.push({
     id: "welcome",
-    title: "Welcome to OpenQuip",
+    title: "Welcome to Cuadra",
     kind: "doc",
     parentId: "getting-started",
     createdAt: now,
@@ -199,7 +199,7 @@ function seedIfEmpty(): void {
   const ydoc = new Y.Doc();
   const fragment = ydoc.getXmlFragment("default");
   const lines = [
-    "Welcome to OpenQuip — a free, open collaborative doc.",
+    "Welcome to Cuadra — a free, open collaborative doc.",
     "",
     "Try this:",
     "- Open this same doc in another browser tab",
@@ -554,7 +554,7 @@ const api = createServer(async (req, res) => {
 
 api.listen(API_PORT, () => {
   const tree = loadTree();
-  console.log(`OpenQuip server`);
+  console.log(`Cuadra server`);
   console.log(`  WebSocket (collab):  ws://localhost:${WS_PORT}`);
   console.log(`  REST API (tree):     http://localhost:${API_PORT}/api/tree`);
   console.log(`  Data directory:      ${DOCS_DIR}`);

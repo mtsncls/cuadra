@@ -1,6 +1,9 @@
-# OpenQuip
+# Cuadra
 
-Free, open-source collaborative documents + checklists (Quip-inspired prototype).
+Free, open-source collaborative documents, checklists and spreadsheets.
+
+Cuadra started as a Quip-inspired prototype: docs, todos, comments and sheets that
+sync live between everyone who has the link.
 
 ## Stack
 
