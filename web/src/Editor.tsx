@@ -9,6 +9,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import * as Y from "yjs";
 import CommentSidebar from "./CommentSidebar";
+import PresenceBar from "./PresenceBar";
 import {
   buildCommentDecorations,
   commentHighlightKey,
@@ -204,6 +205,11 @@ export default function Editor({ docId, user }: Props) {
   return (
     <div className="editor-shell">
       <div className="editor-wrap">
+        <PresenceBar
+          provider={provider}
+          editor={editor}
+          selfClientId={provider.awareness?.clientID ?? null}
+        />
         <div className="toolbar">
           <button
             onClick={() => editor.chain().focus().toggleBold().run()}
