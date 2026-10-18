@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import SheetChart, { suggestRange } from "./SheetChart";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import * as Y from "yjs";
 
@@ -8,147 +9,17 @@ interface Props {
   readOnly?: boolean;
 }
 
+import {
+  cellKey,
+  colLabel,
+  numericValue,
+  parseRef,
+  resolveCell,
+  type Lookup,
+} from "./formula";
+
 const COLS = 10;
 const ROWS = 20;
-
-function colLabel(index: number): string {
-  let n = index;
-  let label = "";
-  do {
-    label = String.fromCharCode(65 + (n % 26)) + label;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
-  return label;
-}
-
-function cellKey(row: number, col: number): string {
-  return `${row}:${col}`;
-}
-
-function parseRef(ref: string): { row: number; col: number } | null {
-  const match = /^\$?([A-Za-z]+)\$?(\d+)$/.exec(ref.trim());
-  if (!match) return null;
-  const col = match[1]
-    .toUpperCase()
-    .split("")
-    .reduce((acc, ch) => acc * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
-  return { row: Number(match[2]) - 1, col };
-}
-
-type Lookup = (row: number, col: number) => string;
-
-/** Evaluates simple spreadsheets formulas: SUM(A1:B3), cell refs and + - * / ( ). */
-function evaluate(raw: string, lookup: Lookup, visiting: Set<string>): string {
-  const text = raw.trim();
-  if (!text.startsWith("=")) return text;
-  const expr = text.slice(1);
-
-  let pos = 0;
-  const skip = () => {
-    while (expr[pos] === " ") pos += 1;
-  };
-
-  const parseExpression = (): number => {
-    let value = parseTerm();
-    for (;;) {
-      skip();
-      const ch = expr[pos];
-      if (ch === "+" || ch === "-") {
-        pos += 1;
-        const rhs = parseTerm();
-        value = ch === "+" ? value + rhs : value - rhs;
-      } else break;
-    }
-    return value;
-  };
-
-  const parseTerm = (): number => {
-    let value = parseFactor();
-    for (;;) {
-      skip();
-      const ch = expr[pos];
-      if (ch === "*" || ch === "/") {
-        pos += 1;
-        const rhs = parseFactor();
-        value = ch === "*" ? value * rhs : value / rhs;
-      } else break;
-    }
-    return value;
-  };
-
-  const parseFactor = (): number => {
-    skip();
-    if (expr[pos] === "-") {
-      pos += 1;
-      return -parseFactor();
-    }
-    if (expr[pos] === "+") {
-      pos += 1;
-      return parseFactor();
-    }
-    if (expr[pos] === "(") {
-      pos += 1;
-      const value = parseExpression();
-      skip();
-      if (expr[pos] === ")") pos += 1;
-      return value;
-    }
-
-    const rest = expr.slice(pos);
-    const sumMatch = /^SUM\s*\(\s*([A-Za-z]+\d+)\s*:\s*([A-Za-z]+\d+)\s*\)/i.exec(rest);
-    if (sumMatch) {
-      pos += sumMatch[0].length;
-      const start = parseRef(sumMatch[1]);
-      const end = parseRef(sumMatch[2]);
-      if (!start || !end) return 0;
-      let total = 0;
-      for (let r = Math.min(start.row, end.row); r <= Math.max(start.row, end.row); r += 1) {
-        for (let c = Math.min(start.col, end.col); c <= Math.max(start.col, end.col); c += 1) {
-          total += numericValue(cellKey(r, c), lookup, visiting);
-        }
-      }
-      return total;
-    }
-
-    const numberMatch = /^\d+(\.\d+)?/.exec(rest);
-    if (numberMatch) {
-      pos += numberMatch[0].length;
-      return Number(numberMatch[0]);
-    }
-
-    const refMatch = /^\$?[A-Za-z]+\$?\d+/.exec(rest);
-    if (refMatch) {
-      pos += refMatch[0].length;
-      const ref = parseRef(refMatch[0]);
-      return ref ? numericValue(cellKey(ref.row, ref.col), lookup, visiting) : 0;
-    }
-
-    pos = expr.length;
-    return 0;
-  };
-
-  const result = parseExpression();
-  if (!Number.isFinite(result)) return "#ERR";
-  return String(Number(result.toFixed(6)));
-}
-
-function numericValue(key: string, lookup: Lookup, visiting: Set<string>): number {
-  if (visiting.has(key)) return 0;
-  const [row, col] = key.split(":").map(Number);
-  const resolved = resolveCell(row, col, lookup, visiting);
-  const n = Number(resolved);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function resolveCell(row: number, col: number, lookup: Lookup, visiting: Set<string>): string {
-  const key = cellKey(row, col);
-  if (visiting.has(key)) return "#CYCLE";
-  const rawValue = lookup(row, col);
-  if (!rawValue.startsWith("=")) return rawValue;
-  const next = new Set(visiting);
-  next.add(key);
-  return evaluate(rawValue, lookup, next);
-}
 
 export default function SheetEditor({ docId, user, readOnly = false }: Props) {
   const provider = useMemo(() => {
@@ -164,6 +35,7 @@ export default function SheetEditor({ docId, user, readOnly = false }: Props) {
   useEffect(() => () => provider.destroy(), [provider]);
 
   const cells = useMemo(() => provider.document.getMap<string>("cells"), [provider]);
+  const chartMap = useMemo(() => provider.document.getMap<string>("chart"), [provider]);
   const [, setVersion] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
   const [extraRows, setExtraRows] = useState(0);
@@ -171,8 +43,12 @@ export default function SheetEditor({ docId, user, readOnly = false }: Props) {
   useEffect(() => {
     const observer = () => setVersion((v) => v + 1);
     cells.observe(observer);
-    return () => cells.unobserve(observer);
-  }, [cells]);
+    chartMap.observe(observer);
+    return () => {
+      cells.unobserve(observer);
+      chartMap.unobserve(observer);
+    };
+  }, [cells, chartMap]);
 
   useEffect(() => {
     // Publish our identity so collaborators show up in the presence bar.
@@ -182,6 +58,18 @@ export default function SheetEditor({ docId, user, readOnly = false }: Props) {
   const lookup: Lookup = (row, col) => cells.get(cellKey(row, col)) ?? "";
 
   const rows = ROWS + extraRows;
+
+  // Charts are stored in the document so everyone sees the same view.
+  const chart = {
+    range: chartMap.get("range") ?? "",
+    type: (chartMap.get("type") === "line" ? "line" : "bar") as "bar" | "line",
+  };
+
+  function setChart(next: { range: string; type: "bar" | "line" }) {
+    if (readOnly) return;
+    chartMap.set("range", next.range);
+    chartMap.set("type", next.type);
+  }
 
   const setCell = (row: number, col: number, value: string) => {
     if (readOnly) return;
@@ -246,6 +134,15 @@ export default function SheetEditor({ docId, user, readOnly = false }: Props) {
           </tbody>
         </table>
       </div>
+      <SheetChart
+        lookup={lookup}
+        config={{
+          range: chart.range || suggestRange(lookup, COLS, rows),
+          type: chart.type,
+        }}
+        onChange={setChart}
+        readOnly={readOnly}
+      />
     </div>
   );
 }

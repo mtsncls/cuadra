@@ -33,6 +33,7 @@ Open http://localhost:5173 — open the same doc in two browser tabs to see live
 - @-mentions in comments with a notifications inbox (🔔) listing mentions of you
 - Presence bar listing everyone in the document, with "follow" mode that tracks a collaborator's caret
 - Spreadsheets as a second document kind: live-synced grid with formulas (`=SUM(A1:A5)`, `=A1*B2`)
+- Sheet charts: a live bar/line chart driven by a cell range, shared with collaborators
 - Accounts (name + password, scrypt-hashed) — optional: anonymous visitors keep working with link access
 - Per-user permissions: owners and invited members (`Can edit` / `Can view`) see documents in their own sidebar
 - Sharing dialog: link access (`restricted` / anyone with the link can edit / can view) plus a member list
@@ -102,6 +103,6 @@ connections (or forces read-only) based on the same rules. Accounts and sessions
 
 ## Roadmap ideas
 
-- Sheet charts, more functions and column/row resizing
+- More sheet functions and column/row resizing
 - Folder-level permissions and an activity feed
 - Custom/user-defined templates
