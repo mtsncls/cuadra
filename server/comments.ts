@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -40,6 +40,19 @@ export function loadComments(docId: string): CommentThread[] {
   } catch {
     return [];
   }
+}
+
+/** Every thread across every document, used by the notifications inbox. */
+export function loadAllComments(): Array<CommentThread & { docId: string }> {
+  const all: Array<CommentThread & { docId: string }> = [];
+  for (const file of readdirSync(COMMENTS_DIR)) {
+    if (!file.endsWith(".json")) continue;
+    const docId = file.slice(0, -".json".length);
+    for (const thread of loadComments(docId)) {
+      all.push({ ...thread, docId });
+    }
+  }
+  return all;
 }
 
 export function saveComments(docId: string, threads: CommentThread[]): void {

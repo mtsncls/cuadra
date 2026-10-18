@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { renderBody } from "./Notifications";
 import { type CommentThread } from "./types";
 
 interface Props {
@@ -65,7 +66,7 @@ export default function CommentSidebar({
                     </span>
                     <span className="comment-date">{new Date(msg.createdAt).toLocaleTimeString()}</span>
                   </div>
-                  <div className="comment-body">{msg.body}</div>
+                  <div className="comment-body">{renderBody(msg.body)}</div>
                 </div>
               ))
             )}

@@ -854,3 +854,98 @@ body {
 .ProseMirror[data-read-only="true"] {
   cursor: default;
 }
+
+/* Mentions + notifications */
+.mention {
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 4px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+
+.mention-me {
+  background: #fde68a;
+  color: #92400e;
+}
+
+.notifications {
+  position: relative;
+  display: inline-flex;
+}
+
+.bell-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+
+.notifications-panel {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  width: 300px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  z-index: 40;
+  padding: 6px;
+}
+
+.notifications-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 6px 8px;
+}
+
+.notifications-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px;
+}
+
+.notification-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: #f4f6f9;
+}
+
+.notification-doc {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.notification-body {
+  font-size: 13px;
+}
+
+.notification-meta {
+  font-size: 11px;
+  color: var(--muted);
+}

@@ -3,7 +3,15 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync,
 import { join } from "node:path";
 import * as Y from "yjs";
 import { Server } from "@hocuspocus/server";
-import { loadComments, newMessageId, newThreadId, saveComments, type CommentMessage, type CommentThread } from "./comments.js";
+import {
+  loadAllComments,
+  loadComments,
+  newMessageId,
+  newThreadId,
+  saveComments,
+  type CommentMessage,
+  type CommentThread,
+} from "./comments.js";
 const DATA_DIR = join(process.cwd(), "data");
 const DOCS_DIR = join(DATA_DIR, "docs");
 const TREE_FILE = join(DATA_DIR, "tree.json");
@@ -436,7 +444,17 @@ const api = createServer(async (req, res) => {
     if (method === "GET" && path === "/api/comments") {
       const docId = url.searchParams.get("docId");
       if (!docId) {
-        json(res, 400, { error: "docId required" });
+        // Inbox view: every thread, tagged with its document.
+        const tree = loadTree();
+        const titles = new Map(tree.docs.map((d) => [d.id, d.title]));
+        json(
+          res,
+          200,
+          loadAllComments().map((thread) => ({
+            ...thread,
+            docTitle: titles.get(thread.docId) ?? thread.docId,
+          }))
+        );
         return;
       }
       json(res, 200, loadComments(docId));

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Editor from "./Editor";
 import SheetEditor from "./SheetEditor";
+import Notifications from "./Notifications";
 import Sidebar, {
   type DocMeta,
   type DragPayload,
@@ -189,6 +190,13 @@ export default function App() {
         <div className="sidebar-header">
           <span className="logo">OpenQuip</span>
           <span className="header-actions">
+            <Notifications
+              me={name}
+              onOpenDoc={(id) => {
+                setActiveId(id);
+                void refresh();
+              }}
+            />
             <button
               className="btn ghost icon"
               title="New folder (root)"
