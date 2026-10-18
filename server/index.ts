@@ -21,9 +21,12 @@ interface FolderMeta {
   createdAt: string;
 }
 
+type DocKind = "doc" | "sheet";
+
 interface DocMeta {
   id: string;
   title: string;
+  kind: DocKind;
   parentId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -44,7 +47,7 @@ function migrateLegacy(): Tree | null {
     const legacy = JSON.parse(readFileSync(LEGACY_META_FILE, "utf8")) as DocMeta[];
     return {
       folders: [],
-      docs: legacy.map((d) => ({ ...d, parentId: null })),
+      docs: legacy.map((d) => ({ ...d, kind: "doc" as const, parentId: null })),
     };
   } catch {
     return null;
@@ -60,6 +63,7 @@ function loadTree(): Tree {
         docs: (parsed.docs ?? []).map((d) => ({
           id: d.id,
           title: d.title,
+          kind: d.kind === "sheet" ? "sheet" : "doc",
           parentId: d.parentId ?? null,
           createdAt: d.createdAt,
           updatedAt: d.updatedAt,
@@ -142,7 +146,14 @@ function touchDoc(id: string, title?: string): void {
     doc.updatedAt = now;
     if (title !== undefined) doc.title = title;
   } else {
-    tree.docs.push({ id, title: title ?? id, parentId: null, createdAt: now, updatedAt: now });
+    tree.docs.push({
+      id,
+      title: title ?? id,
+      kind: "doc",
+      parentId: null,
+      createdAt: now,
+      updatedAt: now,
+    });
   }
   saveTree(tree);
 }
@@ -155,6 +166,7 @@ function seedIfEmpty(): void {
   tree.docs.push({
     id: "welcome",
     title: "Welcome to OpenQuip",
+    kind: "doc",
     parentId: "getting-started",
     createdAt: now,
     updatedAt: now,
@@ -322,19 +334,28 @@ const api = createServer(async (req, res) => {
 
     // --- Documents ---
     if (method === "POST" && path === "/api/docs") {
-      const { title, parentId = null } = JSON.parse((await readBody(req)) || "{}");
+      const { title, parentId = null, kind = "doc" } = JSON.parse((await readBody(req)) || "{}");
       const tree = loadTree();
       if (!isFolder(tree, parentId)) {
         json(res, 400, { error: "Parent folder not found" });
         return;
       }
-      const finalTitle = String(title ?? "").trim() || "Untitled";
+      const docKind: DocKind = kind === "sheet" ? "sheet" : "doc";
+      const fallbackTitle = docKind === "sheet" ? "Untitled sheet" : "Untitled";
+      const finalTitle = String(title ?? "").trim() || fallbackTitle;
       const id = uniqueDocId(finalTitle, tree);
       const now = new Date().toISOString();
-      tree.docs.push({ id, title: finalTitle, parentId, createdAt: now, updatedAt: now });
+      tree.docs.push({
+        id,
+        title: finalTitle,
+        kind: docKind,
+        parentId,
+        createdAt: now,
+        updatedAt: now,
+      });
       saveTree(tree);
       writeFileSync(docPath(id), Y.encodeStateAsUpdate(new Y.Doc()));
-      json(res, 201, { id, title: finalTitle, parentId });
+      json(res, 201, { id, title: finalTitle, kind: docKind, parentId });
       return;
     }
 

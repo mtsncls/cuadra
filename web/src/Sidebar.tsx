@@ -10,6 +10,7 @@ export interface FolderMeta {
 export interface DocMeta {
   id: string;
   title: string;
+  kind?: "doc" | "sheet";
   parentId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -193,7 +194,7 @@ export default function Sidebar({
       return (
         <InlineInput
           key={doc.id}
-          icon="📄"
+          icon={doc.kind === "sheet" ? "📊" : "📄"}
           indent={depth}
           initialValue={doc.title}
           placeholder="Document title"
@@ -211,9 +212,10 @@ export default function Sidebar({
         className={`row doc ${doc.id === activeDocId ? "active" : ""}`}
         style={{ paddingLeft: 8 + depth * 14 }}
         onClick={() => onSelectDoc(doc.id)}
+        data-doc-kind={doc.kind ?? "doc"}
         {...dragProps({ kind: "doc", id: doc.id })}
       >
-        <span className="row-icon">📄</span>
+        <span className="row-icon">{doc.kind === "sheet" ? "📊" : "📄"}</span>
         <span className="row-label">{doc.title}</span>
         <span className="row-actions" onClick={(e) => e.stopPropagation()}>
           <button title="Rename" onClick={() => setRenamingId(doc.id)}>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Editor from "./Editor";
+import SheetEditor from "./SheetEditor";
 import Sidebar, {
   type DocMeta,
   type DragPayload,
@@ -84,12 +85,12 @@ export default function App() {
     });
 
   const api = {
-    createDoc: async (parentId: string | null, title: string) => {
+    createDoc: async (parentId: string | null, title: string, kind: "doc" | "sheet" = "doc") => {
       setPendingNew(null);
       const res = await fetch("/api/docs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, parentId }),
+        body: JSON.stringify({ title, parentId, kind }),
       });
       if (!res.ok) return;
       const doc = (await res.json()) as DocMeta;
@@ -191,6 +192,13 @@ export default function App() {
               🗂
             </button>
             <button
+              className="btn ghost icon"
+              title="New spreadsheet (root)"
+              onClick={() => void api.createDoc(null, "", "sheet")}
+            >
+              📊
+            </button>
+            <button
               className="btn primary"
               onClick={() => setPendingNew({ kind: "doc", parentId: null })}
             >
@@ -245,7 +253,11 @@ export default function App() {
               </button>
               {shareNotice && <span className="share-notice">{shareNotice}</span>}
             </div>
-            <Editor key={activeDoc.id} docId={activeDoc.id} user={{ name, color }} />
+            {activeDoc.kind === "sheet" ? (
+              <SheetEditor key={activeDoc.id} docId={activeDoc.id} user={{ name, color }} />
+            ) : (
+              <Editor key={activeDoc.id} docId={activeDoc.id} user={{ name, color }} />
+            )}
           </>
         ) : (
           <div className="empty">
