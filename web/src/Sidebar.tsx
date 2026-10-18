@@ -11,6 +11,7 @@ export interface DocMeta {
   id: string;
   title: string;
   kind?: "doc" | "sheet";
+  share?: { linkAccess: "edit" | "view" };
   parentId: string | null;
   createdAt: string;
   updatedAt: string;

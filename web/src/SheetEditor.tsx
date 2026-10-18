@@ -5,6 +5,7 @@ import * as Y from "yjs";
 interface Props {
   docId: string;
   user: { name: string; color: string };
+  readOnly?: boolean;
 }
 
 const COLS = 10;
@@ -149,15 +150,16 @@ function resolveCell(row: number, col: number, lookup: Lookup, visiting: Set<str
   return evaluate(rawValue, lookup, next);
 }
 
-export default function SheetEditor({ docId, user }: Props) {
+export default function SheetEditor({ docId, user, readOnly = false }: Props) {
   const provider = useMemo(() => {
     const ydoc = new Y.Doc();
     return new HocuspocusProvider({
       url: "ws://localhost:1234",
       name: docId,
       document: ydoc,
+      token: readOnly ? "view" : "edit",
     });
-  }, [docId]);
+  }, [docId, readOnly]);
 
   useEffect(() => () => provider.destroy(), [provider]);
 
@@ -182,6 +184,7 @@ export default function SheetEditor({ docId, user }: Props) {
   const rows = ROWS + extraRows;
 
   const setCell = (row: number, col: number, value: string) => {
+    if (readOnly) return;
     const key = cellKey(row, col);
     if (value === "") cells.delete(key);
     else cells.set(key, value);
@@ -193,7 +196,7 @@ export default function SheetEditor({ docId, user }: Props) {
         <span className="sheet-hint">
           Type a value or a formula like <code>=SUM(A1:A5)</code>
         </span>
-        <button className="btn ghost" onClick={() => setExtraRows((r) => r + 5)}>
+        <button className="btn ghost" disabled={readOnly} onClick={() => setExtraRows((r) => r + 5)}>
           + Rows
         </button>
       </div>
@@ -221,6 +224,7 @@ export default function SheetEditor({ docId, user }: Props) {
                       <input
                         value={display}
                         data-cell={key}
+                        readOnly={readOnly}
                         onFocus={() => setEditing(key)}
                         onBlur={() => setEditing(null)}
                         onChange={(e) => setCell(r, c, e.target.value)}

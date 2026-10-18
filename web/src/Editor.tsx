@@ -22,6 +22,7 @@ import type { CommentThread } from "./types";
 interface Props {
   docId: string;
   user: { name: string; color: string };
+  readOnly?: boolean;
 }
 
 /** Number of times `needle` appears in `text` before the selection start. */
@@ -50,15 +51,16 @@ function sameRanges(a: DecorationSet | undefined, b: DecorationSet): boolean {
   );
 }
 
-export default function Editor({ docId, user }: Props) {
+export default function Editor({ docId, user, readOnly = false }: Props) {
   const provider = useMemo(() => {
     const ydoc = new Y.Doc();
     return new HocuspocusProvider({
       url: `ws://localhost:1234`,
       name: docId,
       document: ydoc,
+      token: readOnly ? "view" : "edit",
     });
-  }, [docId]);
+  }, [docId, readOnly]);
 
   useEffect(() => () => provider.destroy(), [provider]);
 
@@ -74,8 +76,13 @@ export default function Editor({ docId, user }: Props) {
       Collaboration.configure({ document: provider.document }),
       CollaborationCursor.configure({ provider, user }),
     ],
+    editable: !readOnly,
     editorProps: {
-      attributes: { class: "ProseMirror", "data-doc-id": docId },
+      attributes: {
+        class: "ProseMirror",
+        "data-doc-id": docId,
+        "data-read-only": readOnly ? "true" : "false",
+      },
       handleClick: (_view, _pos, event) => {
         const el = (event.target as HTMLElement).closest(".comment-mark");
         const ids = el?.getAttribute("data-comment-ids");
@@ -210,7 +217,7 @@ export default function Editor({ docId, user }: Props) {
           editor={editor}
           selfClientId={provider.awareness?.clientID ?? null}
         />
-        <div className="toolbar">
+        <div className="toolbar" data-read-only={readOnly ? "true" : "false"}>
           <button
             onClick={() => editor.chain().focus().toggleBold().run()}
             className={editor.isActive("bold") ? "active" : ""}
@@ -299,7 +306,11 @@ export default function Editor({ docId, user }: Props) {
           >
             💬
           </button>
-          <button onClick={() => setShowComments((v) => !v)} title="Toggle comments pane">
+          <button
+            className="keep"
+            onClick={() => setShowComments((v) => !v)}
+            title="Toggle comments pane"
+          >
             {showComments ? "Hide comments" : `Comments (${threads.length})`}
           </button>
         </div>
@@ -309,6 +320,7 @@ export default function Editor({ docId, user }: Props) {
         <CommentSidebar
           threads={threads}
           activeThreadId={activeThread}
+          readOnly={readOnly}
           onAddReply={addReply}
           onResolve={toggleResolved}
           onDelete={deleteThread}

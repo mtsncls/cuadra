@@ -22,6 +22,12 @@ interface FolderMeta {
 }
 
 type DocKind = "doc" | "sheet";
+type LinkAccess = "edit" | "view";
+
+interface DocShare {
+  /** What people arriving through a share link are allowed to do. */
+  linkAccess: LinkAccess;
+}
 
 interface DocMeta {
   id: string;
@@ -30,6 +36,7 @@ interface DocMeta {
   parentId: string | null;
   createdAt: string;
   updatedAt: string;
+  share: DocShare;
 }
 
 interface Tree {
@@ -47,7 +54,12 @@ function migrateLegacy(): Tree | null {
     const legacy = JSON.parse(readFileSync(LEGACY_META_FILE, "utf8")) as DocMeta[];
     return {
       folders: [],
-      docs: legacy.map((d) => ({ ...d, kind: "doc" as const, parentId: null })),
+      docs: legacy.map((d) => ({
+        ...d,
+        kind: "doc" as const,
+        parentId: null,
+        share: { linkAccess: "edit" as const },
+      })),
     };
   } catch {
     return null;
@@ -67,6 +79,7 @@ function loadTree(): Tree {
           parentId: d.parentId ?? null,
           createdAt: d.createdAt,
           updatedAt: d.updatedAt,
+          share: { linkAccess: d.share?.linkAccess === "view" ? "view" : "edit" },
         })),
       };
     } catch {
@@ -153,6 +166,7 @@ function touchDoc(id: string, title?: string): void {
       parentId: null,
       createdAt: now,
       updatedAt: now,
+      share: { linkAccess: "edit" },
     });
   }
   saveTree(tree);
@@ -170,6 +184,7 @@ function seedIfEmpty(): void {
     parentId: "getting-started",
     createdAt: now,
     updatedAt: now,
+    share: { linkAccess: "edit" },
   });
   saveTree(tree);
 
@@ -202,8 +217,20 @@ function seedIfEmpty(): void {
 
 seedIfEmpty();
 
+function linkAccessOf(documentName: string): LinkAccess {
+  return loadTree().docs.find((d) => d.id === documentName)?.share.linkAccess ?? "edit";
+}
+
 const hocuspocus = new Server({
   port: WS_PORT,
+  async onAuthenticate({ token, documentName, connectionConfig }) {
+    // `token` carries the access the client asked for; a doc that is shared
+    // view-only always wins, so links cannot be used to escalate to edit.
+    const requested = token === "view" ? "view" : "edit";
+    const access = linkAccessOf(documentName) === "view" ? "view" : requested;
+    connectionConfig.readOnly = access === "view";
+    return { access };
+  },
   async onLoadDocument({ document, documentName }) {
     const path = docPath(documentName);
     if (existsSync(path)) {
@@ -352,6 +379,7 @@ const api = createServer(async (req, res) => {
         parentId,
         createdAt: now,
         updatedAt: now,
+        share: { linkAccess: "edit" },
       });
       saveTree(tree);
       writeFileSync(docPath(id), Y.encodeStateAsUpdate(new Y.Doc()));
@@ -369,8 +397,13 @@ const api = createServer(async (req, res) => {
       }
 
       if (method === "PATCH") {
-        const { title, parentId } = JSON.parse((await readBody(req)) || "{}");
+        const { title, parentId, share } = JSON.parse((await readBody(req)) || "{}");
         if (typeof title === "string" && title.trim()) doc.title = title.trim();
+        if (share && typeof share === "object") {
+          doc.share = {
+            linkAccess: share.linkAccess === "view" ? "view" : "edit",
+          };
+        }
         if (parentId !== undefined) {
           if (!isFolder(tree, parentId)) {
             json(res, 400, { error: "Parent folder not found" });

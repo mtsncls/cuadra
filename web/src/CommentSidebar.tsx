@@ -4,6 +4,7 @@ import { type CommentThread } from "./types";
 interface Props {
   threads: CommentThread[];
   activeThreadId: string | null;
+  readOnly?: boolean;
   onAddReply: (threadId: string, body: string) => void;
   onResolve: (threadId: string, resolved: boolean) => void;
   onDelete: (threadId: string) => void;
@@ -13,6 +14,7 @@ interface Props {
 export default function CommentSidebar({
   threads,
   activeThreadId,
+  readOnly = false,
   onAddReply,
   onResolve,
   onDelete,
@@ -67,12 +69,16 @@ export default function CommentSidebar({
                 </div>
               ))
             )}
-            <ReplyBox
-              onSubmit={(text) => onAddReply(thread.id, text)}
-              onResolve={() => onResolve(thread.id, !thread.resolved)}
-              onDelete={() => onDelete(thread.id)}
-              resolved={thread.resolved}
-            />
+            {readOnly ? (
+              <div className="reply-readonly">Read-only link — commenting is disabled</div>
+            ) : (
+              <ReplyBox
+                onSubmit={(text) => onAddReply(thread.id, text)}
+                onResolve={() => onResolve(thread.id, !thread.resolved)}
+                onDelete={() => onDelete(thread.id)}
+                resolved={thread.resolved}
+              />
+            )}
           </div>
         ))}
       </div>

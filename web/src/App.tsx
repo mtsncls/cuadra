@@ -177,6 +177,11 @@ export default function App() {
   }
 
   const activeDoc = tree.docs.find((d) => d.id === activeId) ?? null;
+  const requestedAccess =
+    new URLSearchParams(window.location.search).get("as") === "view" ? "view" : "edit";
+  const readOnly = Boolean(
+    activeDoc && (activeDoc.share?.linkAccess === "view" || requestedAccess === "view")
+  );
 
   return (
     <div className="app">
@@ -239,10 +244,14 @@ export default function App() {
           <>
             <div className="doc-header">
               <span className="doc-header-title">{activeDoc.title}</span>
+              {readOnly && <span className="view-only-badge">View only</span>}
               <button
                 className="btn ghost"
                 onClick={() => {
-                  const link = `${window.location.origin}/?doc=${encodeURIComponent(activeDoc.id)}`;
+                  const suffix = activeDoc.share?.linkAccess === "view" ? "&as=view" : "";
+                  const link = `${window.location.origin}/?doc=${encodeURIComponent(
+                    activeDoc.id
+                  )}${suffix}`;
                   void navigator.clipboard?.writeText(link).catch(() => undefined);
                   setShareNotice("Link copied");
                   window.setTimeout(() => setShareNotice(""), 2000);
@@ -251,12 +260,41 @@ export default function App() {
               >
                 🔗 Share
               </button>
+              <label className="share-access">
+                Link access
+                <select
+                  value={activeDoc.share?.linkAccess ?? "edit"}
+                  onChange={(e) =>
+                    void api.patch("doc", activeDoc.id, {
+                      share: { linkAccess: e.target.value },
+                    })
+                  }
+                >
+                  <option value="edit">Anyone with the link can edit</option>
+                  <option value="view">Anyone with the link can view</option>
+                </select>
+              </label>
               {shareNotice && <span className="share-notice">{shareNotice}</span>}
             </div>
+            {readOnly && (
+              <div className="read-only-banner">
+                You are viewing this document with a view-only link.
+              </div>
+            )}
             {activeDoc.kind === "sheet" ? (
-              <SheetEditor key={activeDoc.id} docId={activeDoc.id} user={{ name, color }} />
+              <SheetEditor
+                key={activeDoc.id}
+                docId={activeDoc.id}
+                user={{ name, color }}
+                readOnly={readOnly}
+              />
             ) : (
-              <Editor key={activeDoc.id} docId={activeDoc.id} user={{ name, color }} />
+              <Editor
+                key={activeDoc.id}
+                docId={activeDoc.id}
+                user={{ name, color }}
+                readOnly={readOnly}
+              />
             )}
           </>
         ) : (
