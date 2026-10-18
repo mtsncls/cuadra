@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import Editor from "./Editor";
 import SheetEditor from "./SheetEditor";
 import Notifications from "./Notifications";
+import AuthDialog, { type PublicUser } from "./Auth";
+import ShareDialog from "./ShareDialog";
 import { getStored, setStored } from "./storage";
 import Sidebar, {
   type DocMeta,
@@ -40,16 +42,33 @@ export default function App() {
     () => getStored("color") ?? randomColor()
   );
   const [naming, setNaming] = useState(false);
-  const [shareNotice, setShareNotice] = useState("");
+  const [me, setMe] = useState<PublicUser | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [pendingNew, setPendingNew] = useState<{
     kind: "doc" | "folder";
     parentId: string | null;
   } | null>(null);
 
+  const loadSession = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) return;
+      const payload = (await res.json()) as { user: PublicUser | null };
+      setMe(payload.user);
+    } catch {
+      // Offline or server restarting: stay as the current guest identity.
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     const res = await fetch("/api/tree");
     if (res.ok) setTree(await res.json());
   }, []);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
 
   useEffect(() => {
     void refresh();
@@ -60,6 +79,16 @@ export default function App() {
     setStored("name", name);
     setStored("color", color);
   }, [name, color]);
+
+  // Signed-in accounts own their identity; guests keep the local one.
+  const displayName = me?.name ?? name;
+  const displayColor = me?.color ?? color;
+
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setMe(null);
+    await refresh();
+  }
 
   useEffect(() => {
     setStored("collapsed", JSON.stringify([...collapsed]));
@@ -153,7 +182,7 @@ export default function App() {
     await refresh();
   }
 
-  if (naming || !name) {
+  if (!me && (naming || !name)) {
     return (
       <div className="onboarding">
         <div className="onboarding-card">
@@ -179,20 +208,39 @@ export default function App() {
   }
 
   const activeDoc = tree.docs.find((d) => d.id === activeId) ?? null;
-  const requestedAccess =
-    new URLSearchParams(window.location.search).get("as") === "view" ? "view" : "edit";
+  const linkViewRequested =
+    new URLSearchParams(window.location.search).get("as") === "view";
   const readOnly = Boolean(
-    activeDoc && (activeDoc.share?.linkAccess === "view" || requestedAccess === "view")
+    activeDoc && (activeDoc.access === "view" || linkViewRequested)
   );
+  const canManage = Boolean(activeDoc && activeDoc.access === "edit");
 
   return (
     <div className="app">
+      {shareOpen && activeId && (
+        <ShareDialog
+          docId={activeId}
+          docTitle={activeDoc?.title || "Untitled"}
+          me={me}
+          onClose={() => setShareOpen(false)}
+          onChanged={() => void refresh()}
+        />
+      )}
+      {authOpen && (
+        <AuthDialog
+          onClose={() => setAuthOpen(false)}
+          onSignedIn={async (user) => {
+            setMe(user);
+            await refresh();
+          }}
+        />
+      )}
       <aside className="sidebar">
         <div className="sidebar-header">
           <span className="logo">Cuadra</span>
           <span className="header-actions">
             <Notifications
-              me={name}
+              me={displayName}
               onOpenDoc={(id) => {
                 setActiveId(id);
                 void refresh();
@@ -239,13 +287,24 @@ export default function App() {
           onCancelNew={() => setPendingNew(null)}
         />
         <div className="sidebar-footer">
-          <span className="avatar" style={{ background: color }}>
-            {name.slice(0, 1).toUpperCase()}
+          <span className="avatar" style={{ background: displayColor }}>
+            {displayName.slice(0, 1).toUpperCase()}
           </span>
-          <span className="user-name">{name}</span>
-          <button className="btn ghost" onClick={() => setNaming(true)}>
-            Change
-          </button>
+          <span className="user-name">{displayName}</span>
+          {me ? (
+            <button className="btn ghost" onClick={() => void signOut()}>
+              Sign out
+            </button>
+          ) : (
+            <>
+              <button className="btn ghost" onClick={() => setNaming(true)}>
+                Rename
+              </button>
+              <button className="btn ghost" onClick={() => setAuthOpen(true)}>
+                Sign in
+              </button>
+            </>
+          )}
         </div>
       </aside>
       <main className="main">
@@ -254,54 +313,35 @@ export default function App() {
             <div className="doc-header">
               <span className="doc-header-title">{activeDoc.title}</span>
               {readOnly && <span className="view-only-badge">View only</span>}
-              <button
-                className="btn ghost"
-                onClick={() => {
-                  const suffix = activeDoc.share?.linkAccess === "view" ? "&as=view" : "";
-                  const link = `${window.location.origin}/?doc=${encodeURIComponent(
-                    activeDoc.id
-                  )}${suffix}`;
-                  void navigator.clipboard?.writeText(link).catch(() => undefined);
-                  setShareNotice("Link copied");
-                  window.setTimeout(() => setShareNotice(""), 2000);
-                }}
-                title="Copy a shareable link to this document"
-              >
-                🔗 Share
-              </button>
-              <label className="share-access">
-                Link access
-                <select
-                  value={activeDoc.share?.linkAccess ?? "edit"}
-                  onChange={(e) =>
-                    void api.patch("doc", activeDoc.id, {
-                      share: { linkAccess: e.target.value },
-                    })
-                  }
+              {canManage && (
+                <button
+                  className="btn ghost"
+                  onClick={() => setShareOpen(true)}
+                  title="Share this document with people or a link"
                 >
-                  <option value="edit">Anyone with the link can edit</option>
-                  <option value="view">Anyone with the link can view</option>
-                </select>
-              </label>
-              {shareNotice && <span className="share-notice">{shareNotice}</span>}
+                  🔗 Share
+                </button>
+              )}
             </div>
             {readOnly && (
               <div className="read-only-banner">
-                You are viewing this document with a view-only link.
+                {linkViewRequested && activeDoc.access === "edit"
+                  ? "You are viewing this shared document in read-only mode."
+                  : "You have view-only access to this document."}
               </div>
             )}
             {activeDoc.kind === "sheet" ? (
               <SheetEditor
                 key={activeDoc.id}
                 docId={activeDoc.id}
-                user={{ name, color }}
+                user={{ name: displayName, color: displayColor }}
                 readOnly={readOnly}
               />
             ) : (
               <Editor
                 key={activeDoc.id}
                 docId={activeDoc.id}
-                user={{ name, color }}
+                user={{ name: displayName, color: displayColor }}
                 readOnly={readOnly}
               />
             )}

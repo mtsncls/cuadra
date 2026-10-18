@@ -11,7 +11,11 @@ export interface DocMeta {
   id: string;
   title: string;
   kind?: "doc" | "sheet";
-  share?: { linkAccess: "edit" | "view" };
+  share?: { linkAccess: "restricted" | "edit" | "view" };
+  ownerId?: string | null;
+  members?: Record<string, "editor" | "viewer">;
+  /** What the signed-in (or anonymous) visitor may do with this document. */
+  access?: "edit" | "view";
   parentId: string | null;
   createdAt: string;
   updatedAt: string;

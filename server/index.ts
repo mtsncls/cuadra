@@ -2,6 +2,23 @@ import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as Y from "yjs";
+import {
+  clearCookie,
+  createSession,
+  destroySession,
+  findUserById,
+  findUserByHandle,
+  listUsers,
+  readCookie,
+  registerUser,
+  SESSION_COOKIE,
+  sessionCookie,
+  toPublicUser,
+  userForCookie,
+  verifyPassword,
+  type PublicUser,
+  type User,
+} from "./auth.js";
 import { Server } from "@hocuspocus/server";
 import {
   loadAllComments,
@@ -30,12 +47,15 @@ interface FolderMeta {
 }
 
 type DocKind = "doc" | "sheet";
-type LinkAccess = "edit" | "view";
+type LinkAccess = "restricted" | "edit" | "view";
 
 interface DocShare {
-  /** What people arriving through a share link are allowed to do. */
+  /** Who can reach the doc through a link, and what they may do. */
   linkAccess: LinkAccess;
 }
+
+type MemberRole = "editor" | "viewer";
+type Access = "edit" | "view";
 
 interface DocMeta {
   id: string;
@@ -45,6 +65,10 @@ interface DocMeta {
   createdAt: string;
   updatedAt: string;
   share: DocShare;
+  /** null for documents created before accounts existed — those stay open. */
+  ownerId: string | null;
+  /** Per-user grants, keyed by user id. */
+  members: Record<string, MemberRole>;
 }
 
 interface Tree {
@@ -67,6 +91,8 @@ function migrateLegacy(): Tree | null {
         kind: "doc" as const,
         parentId: null,
         share: { linkAccess: "edit" as const },
+        ownerId: null,
+        members: {},
       })),
     };
   } catch {
@@ -87,7 +113,9 @@ function loadTree(): Tree {
           parentId: d.parentId ?? null,
           createdAt: d.createdAt,
           updatedAt: d.updatedAt,
-          share: { linkAccess: d.share?.linkAccess === "view" ? "view" : "edit" },
+          share: { linkAccess: normalizeLinkAccess(d.share?.linkAccess) },
+          ownerId: typeof d.ownerId === "string" ? d.ownerId : null,
+          members: d.members ?? {},
         })),
       };
     } catch {
@@ -159,6 +187,31 @@ function isAncestorOrSelf(tree: Tree, ancestorId: string, nodeId: string): boole
   return false;
 }
 
+function normalizeLinkAccess(value: unknown): LinkAccess {
+  if (value === "view") return "view";
+  if (value === "restricted") return "restricted";
+  return "edit";
+}
+
+/** Whether `user` (possibly anonymous) may see the document at all. */
+function canSee(doc: DocMeta, user: User | null): boolean {
+  if (user && doc.ownerId === user.id) return true;
+  if (user && doc.members[user.id]) return true;
+  if (!doc.ownerId) return true; // documents created before accounts existed
+  return doc.share.linkAccess !== "restricted";
+}
+
+/** What `user` (possibly anonymous) is allowed to do with `doc`. */
+function accessFor(doc: DocMeta, user: User | null): Access {
+  if (user && doc.ownerId === user.id) return "edit";
+  const role = user ? doc.members[user.id] : undefined;
+  if (role === "editor") return "edit";
+  if (role === "viewer") return "view";
+  if (!doc.ownerId) return "edit";
+  if (doc.share.linkAccess === "edit") return "edit";
+  return "view"; // view links and restricted docs are read-only without a grant
+}
+
 function touchDoc(id: string, title?: string): void {
   const tree = loadTree();
   const doc = tree.docs.find((d) => d.id === id);
@@ -175,6 +228,8 @@ function touchDoc(id: string, title?: string): void {
       createdAt: now,
       updatedAt: now,
       share: { linkAccess: "edit" },
+      ownerId: null,
+      members: {},
     });
   }
   saveTree(tree);
@@ -193,6 +248,8 @@ function seedIfEmpty(): void {
     createdAt: now,
     updatedAt: now,
     share: { linkAccess: "edit" },
+    ownerId: null,
+    members: {},
   });
   saveTree(tree);
 
@@ -225,19 +282,19 @@ function seedIfEmpty(): void {
 
 seedIfEmpty();
 
-function linkAccessOf(documentName: string): LinkAccess {
-  return loadTree().docs.find((d) => d.id === documentName)?.share.linkAccess ?? "edit";
-}
-
 const hocuspocus = new Server({
   port: WS_PORT,
-  async onAuthenticate({ token, documentName, connectionConfig }) {
-    // `token` carries the access the client asked for; a doc that is shared
-    // view-only always wins, so links cannot be used to escalate to edit.
-    const requested = token === "view" ? "view" : "edit";
-    const access = linkAccessOf(documentName) === "view" ? "view" : requested;
+  async onAuthenticate({ token, documentName, connectionConfig, requestHeaders }) {
+    // Priority: per-user permissions first, then the link access the client
+    // asked for. A doc shared view-only can never be escalated to edit.
+    const user = userForCookie(requestHeaders.cookie as string | undefined);
+    const doc = loadTree().docs.find((d) => d.id === documentName);
+    if (doc && !canSee(doc, user)) {
+      throw new Error("You do not have access to this document");
+    }
+    const access: Access = doc ? accessFor(doc, user) : token === "view" ? "view" : "edit";
     connectionConfig.readOnly = access === "view";
-    return { access };
+    return { access, user: user ? toPublicUser(user) : null };
   },
   async onLoadDocument({ document, documentName }) {
     const path = docPath(documentName);
@@ -286,15 +343,64 @@ const api = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${API_PORT}`);
   const path = url.pathname;
   const method = req.method ?? "GET";
+  const currentUser = userForCookie(req.headers.cookie);
 
   try {
+    // --- Auth ---
+    if (method === "GET" && path === "/api/auth/me") {
+      json(res, 200, { user: currentUser ? toPublicUser(currentUser) : null });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/auth/register") {
+      const { name = "", password = "" } = JSON.parse((await readBody(req)) || "{}");
+      try {
+        const user = registerUser(String(name), String(password));
+        res.setHeader("Set-Cookie", sessionCookie(createSession(user.id).token));
+        json(res, 201, { user: toPublicUser(user) });
+      } catch (error) {
+        json(res, 400, { error: error instanceof Error ? error.message : "Could not register" });
+      }
+      return;
+    }
+
+    if (method === "POST" && path === "/api/auth/login") {
+      const { name = "", password = "" } = JSON.parse((await readBody(req)) || "{}");
+      const user = findUserByHandle(String(name));
+      if (!user || !verifyPassword(user, String(password))) {
+        json(res, 401, { error: "Wrong name or password" });
+        return;
+      }
+      res.setHeader("Set-Cookie", sessionCookie(createSession(user.id).token));
+      json(res, 200, { user: toPublicUser(user) });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/auth/logout") {
+      const token = readCookie(req.headers.cookie, SESSION_COOKIE);
+      if (token) destroySession(token);
+      res.setHeader("Set-Cookie", clearCookie());
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    if (method === "GET" && path === "/api/users") {
+      json(res, 200, listUsers());
+      return;
+    }
     // Full tree used by the sidebar.
     if (method === "GET" && (path === "/api/tree" || path === "/api/docs")) {
       const tree = loadTree();
-      const docs = tree.docs.map((d) => {
-        const p = docPath(d.id);
-        return { ...d, size: existsSync(p) ? statSync(p).size : 0 };
-      });
+      const docs = tree.docs
+        .filter((d) => canSee(d, currentUser))
+        .map((d) => {
+          const p = docPath(d.id);
+          return {
+            ...d,
+            access: accessFor(d, currentUser),
+            size: existsSync(p) ? statSync(p).size : 0,
+          };
+        });
       if (path === "/api/docs") {
         json(res, 200, docs);
       } else {
@@ -387,7 +493,9 @@ const api = createServer(async (req, res) => {
         parentId,
         createdAt: now,
         updatedAt: now,
-        share: { linkAccess: "edit" },
+        share: { linkAccess: currentUser ? "restricted" : "edit" },
+        ownerId: currentUser ? currentUser.id : null,
+        members: {},
       });
       saveTree(tree);
       writeFileSync(docPath(id), Y.encodeStateAsUpdate(new Y.Doc()));
@@ -395,23 +503,104 @@ const api = createServer(async (req, res) => {
       return;
     }
 
+    // --- Sharing (per-user members) ---
+    if (path.startsWith("/api/docs/") && path.includes("/members")) {
+      const rest = path.slice("/api/docs/".length);
+      const [rawId, , memberId] = rest.split("/");
+      const id = decodeURIComponent(rawId);
+      const tree = loadTree();
+      const doc = tree.docs.find((d) => d.id === id);
+      if (!doc || !canSee(doc, currentUser)) {
+        json(res, 404, { error: "Document not found" });
+        return;
+      }
+      const isOwner = !doc.ownerId || doc.ownerId === currentUser?.id;
+
+      if (method === "GET") {
+        const ownerUser = doc.ownerId ? findUserById(doc.ownerId) : null;
+        json(res, 200, {
+          owner: ownerUser ? toPublicUser(ownerUser) : null,
+          members: Object.entries(doc.members)
+            .map(([userId, role]) => {
+              const u = findUserById(userId);
+              return u ? { user: toPublicUser(u), role } : null;
+            })
+            .filter(Boolean),
+          linkAccess: doc.share.linkAccess,
+          canManage: isOwner,
+        });
+        return;
+      }
+
+      if (!isOwner) {
+        json(res, 403, { error: "Only the owner can manage sharing" });
+        return;
+      }
+
+      if (method === "POST" && !memberId) {
+        const { name = "", role = "editor" } = JSON.parse((await readBody(req)) || "{}");
+        const invitee = findUserByHandle(String(name));
+        if (!invitee) {
+          json(res, 404, { error: "No user with that name" });
+          return;
+        }
+        if (invitee.id === doc.ownerId) {
+          json(res, 400, { error: "That user already owns this document" });
+          return;
+        }
+        doc.members[invitee.id] = role === "viewer" ? "viewer" : "editor";
+        saveTree(tree);
+        json(res, 201, { user: toPublicUser(invitee), role: doc.members[invitee.id] });
+        return;
+      }
+
+      if (memberId) {
+        const userId = decodeURIComponent(memberId);
+        if (!doc.members[userId]) {
+          json(res, 404, { error: "That user is not a member" });
+          return;
+        }
+        if (method === "PATCH") {
+          const { role = "editor" } = JSON.parse((await readBody(req)) || "{}");
+          doc.members[userId] = role === "viewer" ? "viewer" : "editor";
+          saveTree(tree);
+          json(res, 200, { userId, role: doc.members[userId] });
+          return;
+        }
+        if (method === "DELETE") {
+          delete doc.members[userId];
+          saveTree(tree);
+          res.writeHead(204).end();
+          return;
+        }
+      }
+    }
+
     if (path.startsWith("/api/docs/")) {
       const id = decodeURIComponent(path.slice("/api/docs/".length));
       const tree = loadTree();
       const doc = tree.docs.find((d) => d.id === id);
-      if (!doc) {
+      if (!doc || !canSee(doc, currentUser)) {
         json(res, 404, { error: "Document not found" });
         return;
       }
 
       if (method === "PATCH") {
         const { title, parentId, share } = JSON.parse((await readBody(req)) || "{}");
-        if (typeof title === "string" && title.trim()) doc.title = title.trim();
-        if (share && typeof share === "object") {
-          doc.share = {
-            linkAccess: share.linkAccess === "view" ? "view" : "edit",
-          };
+        const body = { title, parentId, share };
+        if (accessFor(doc, currentUser) !== "edit") {
+          json(res, 403, { error: "You do not have edit access to this document" });
+          return;
         }
+        if (body.share && typeof body.share === "object") {
+          // Only the owner (or an ownerless doc) may change sharing settings.
+          if (doc.ownerId && doc.ownerId !== currentUser?.id) {
+            json(res, 403, { error: "Only the owner can change sharing" });
+            return;
+          }
+          doc.share = { linkAccess: normalizeLinkAccess(body.share.linkAccess) };
+        }
+        if (typeof title === "string" && title.trim()) doc.title = title.trim();
         if (parentId !== undefined) {
           if (!isFolder(tree, parentId)) {
             json(res, 400, { error: "Parent folder not found" });
@@ -421,11 +610,15 @@ const api = createServer(async (req, res) => {
         }
         doc.updatedAt = new Date().toISOString();
         saveTree(tree);
-        json(res, 200, doc);
+        json(res, 200, { ...doc, access: accessFor(doc, currentUser) });
         return;
       }
 
       if (method === "DELETE") {
+        if (accessFor(doc, currentUser) !== "edit") {
+          json(res, 403, { error: "You do not have edit access to this document" });
+          return;
+        }
         tree.docs = tree.docs.filter((d) => d.id !== id);
         saveTree(tree);
         const p = docPath(id);
@@ -450,14 +643,20 @@ const api = createServer(async (req, res) => {
         json(
           res,
           200,
-          loadAllComments().map((thread) => ({
-            ...thread,
-            docTitle: titles.get(thread.docId) ?? thread.docId,
-          }))
+          loadAllComments()
+            .filter((thread) => {
+              const d = tree.docs.find((x) => x.id === thread.docId);
+              return !!d && canSee(d, currentUser);
+            })
+            .map((thread) => ({
+              ...thread,
+              docTitle: titles.get(thread.docId) ?? thread.docId,
+            }))
         );
         return;
       }
-      json(res, 200, loadComments(docId));
+      const seen = loadTree().docs.find((d) => d.id === docId);
+      json(res, 200, seen && canSee(seen, currentUser) ? loadComments(docId) : []);
       return;
     }
 
@@ -466,6 +665,11 @@ const api = createServer(async (req, res) => {
       const { docId, anchor, anchorText = "", author = "Anonymous", authorColor = "#2563eb" } = body;
       if (!docId || !anchor) {
         json(res, 400, { error: "docId and anchor required" });
+        return;
+      }
+      const doc = loadTree().docs.find((d) => d.id === docId);
+      if (doc && (!canSee(doc, currentUser) || accessFor(doc, currentUser) !== "edit")) {
+        json(res, 403, { error: "You do not have edit access to this document" });
         return;
       }
       const now = new Date().toISOString();
@@ -497,6 +701,12 @@ const api = createServer(async (req, res) => {
         json(res, 400, { error: "docId required" });
         return;
       }
+      const commentDoc = loadTree().docs.find((d) => d.id === docIdParam);
+      const canWrite = !!commentDoc && canSee(commentDoc, currentUser) && accessFor(commentDoc, currentUser) === "edit";
+      if (!canWrite && (method === "POST" || method === "PATCH" || method === "DELETE")) {
+        json(res, 403, { error: "You do not have edit access to this document" });
+        return;
+      }
       const all = loadComments(docIdParam);
       const idx = all.findIndex((t) => t.id === threadId);
       if (idx === -1) {
@@ -507,7 +717,11 @@ const api = createServer(async (req, res) => {
 
       if (method === "POST" && parts[1] === "messages") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        const { author = "Anonymous", authorColor = "#2563eb", body: text } = body;
+        const {
+          author = currentUser?.name ?? "Anonymous",
+          authorColor = currentUser?.color ?? "#2563eb",
+          body: text,
+        } = body;
         if (!text || !String(text).trim()) {
           json(res, 400, { error: "body required" });
           return;
