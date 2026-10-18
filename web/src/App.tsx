@@ -5,6 +5,7 @@ import Notifications from "./Notifications";
 import AuthDialog, { type PublicUser } from "./Auth";
 import ShareDialog from "./ShareDialog";
 import NewDocDialog from "./NewDocDialog";
+import Logo from "./Logo";
 import { getStored, setStored } from "./storage";
 import Sidebar, {
   type DocMeta,
@@ -254,7 +255,7 @@ export default function App() {
       )}
       <aside className="sidebar">
         <div className="sidebar-header">
-          <span className="logo">Cuadra</span>
+          <span className="logo"><Logo size={20} /><span className="logo-text">Cuadra</span></span>
           <span className="header-actions">
             <Notifications
               me={displayName}
