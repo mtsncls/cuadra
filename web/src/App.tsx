@@ -313,6 +313,20 @@ export default function App() {
             <div className="doc-header">
               <span className="doc-header-title">{activeDoc.title}</span>
               {readOnly && <span className="view-only-badge">View only</span>}
+              <a
+                className="btn ghost"
+                href={`/api/docs/${encodeURIComponent(activeDoc.id)}/export?format=${
+                  activeDoc.kind === "sheet" ? "csv" : "md"
+                }`}
+                download
+                title={
+                  activeDoc.kind === "sheet"
+                    ? "Download this spreadsheet as CSV"
+                    : "Download this document as Markdown"
+                }
+              >
+                ⬇ Export
+              </a>
               {canManage && (
                 <button
                   className="btn ghost"

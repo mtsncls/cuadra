@@ -37,6 +37,7 @@ Open http://localhost:5173 — open the same doc in two browser tabs to see live
 - Per-user permissions: owners and invited members (`Can edit` / `Can view`) see documents in their own sidebar
 - Sharing dialog: link access (`restricted` / anyone with the link can edit / can view) plus a member list
 - Restricted by default: documents you create are private to you until you share them
+- Export: download documents as Markdown and spreadsheets as CSV (⬇ in the header)
 - Deep-linkable documents (`/?doc=<id>`, `&as=view` for a read-only view)
 - Durable storage on disk (`data/tree.json` metadata + `data/docs/*.ydoc`)
 
@@ -51,6 +52,7 @@ Open http://localhost:5173 — open the same doc in two browser tabs to see live
 | POST | `/api/docs` | Create doc `{ title, parentId, kind }` (`kind: "doc" \| "sheet"`) |
 | PATCH | `/api/docs/:id` | Rename or move `{ title?, parentId? }` |
 | DELETE | `/api/docs/:id` | Delete doc (moved to `data/trash`) |
+| GET  | `/api/docs/:id/export?format=md\|csv` | Export a doc as Markdown or a sheet as CSV |
 | POST | `/api/auth/register` | Create an account `{ name, password }`; sets the session cookie |
 | POST | `/api/auth/login` | Sign in `{ name, password }`; sets the session cookie |
 | POST | `/api/auth/logout` | Clear the session |

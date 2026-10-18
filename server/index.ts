@@ -1,3 +1,4 @@
+import { docToMarkdown, sheetToCsv } from "./markdown.js";
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -210,6 +211,17 @@ function accessFor(doc: DocMeta, user: User | null): Access {
   if (!doc.ownerId) return "edit";
   if (doc.share.linkAccess === "edit") return "edit";
   return "view"; // view links and restricted docs are read-only without a grant
+}
+
+/** Read a document's stored Yjs state into a fresh Y.Doc (no live session). */
+function loadYDoc(id: string): Y.Doc {
+  const doc = new Y.Doc();
+  const path = docPath(id);
+  if (existsSync(path)) {
+    const update = readFileSync(path);
+    if (update.byteLength > 0) Y.applyUpdate(doc, new Uint8Array(update), "load");
+  }
+  return doc;
 }
 
 function touchDoc(id: string, title?: string): void {
@@ -500,6 +512,29 @@ const api = createServer(async (req, res) => {
       saveTree(tree);
       writeFileSync(docPath(id), Y.encodeStateAsUpdate(new Y.Doc()));
       json(res, 201, { id, title: finalTitle, kind: docKind, parentId });
+      return;
+    }
+
+    // --- Export ---
+    if (path.startsWith("/api/docs/") && path.endsWith("/export")) {
+      const id = decodeURIComponent(path.slice("/api/docs/".length, -"/export".length));
+      const doc = loadTree().docs.find((d) => d.id === id);
+      if (!doc || !canSee(doc, currentUser)) {
+        json(res, 404, { error: "Document not found" });
+        return;
+      }
+      const ydoc = loadYDoc(id);
+      const format = (url.searchParams.get("format") ?? (doc.kind === "sheet" ? "csv" : "md")).toLowerCase();
+      const body =
+        format === "csv" ? sheetToCsv(ydoc) : docToMarkdown(ydoc, doc.title);
+      const extension = format === "csv" ? "csv" : "md";
+      const contentType =
+        format === "csv" ? "text/csv; charset=utf-8" : "text/markdown; charset=utf-8";
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${slugify(doc.title)}.${extension}"`,
+      });
+      res.end(body);
       return;
     }
 
