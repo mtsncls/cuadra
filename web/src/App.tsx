@@ -4,6 +4,7 @@ import SheetEditor from "./SheetEditor";
 import Notifications from "./Notifications";
 import AuthDialog, { type PublicUser } from "./Auth";
 import ShareDialog from "./ShareDialog";
+import NewDocDialog from "./NewDocDialog";
 import { getStored, setStored } from "./storage";
 import Sidebar, {
   type DocMeta,
@@ -45,6 +46,7 @@ export default function App() {
   const [me, setMe] = useState<PublicUser | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
   const [pendingNew, setPendingNew] = useState<{
     kind: "doc" | "folder";
     parentId: string | null;
@@ -116,12 +118,17 @@ export default function App() {
     });
 
   const api = {
-    createDoc: async (parentId: string | null, title: string, kind: "doc" | "sheet" = "doc") => {
+    createDoc: async (
+      parentId: string | null,
+      title: string,
+      kind: "doc" | "sheet" = "doc",
+      template = ""
+    ) => {
       setPendingNew(null);
       const res = await fetch("/api/docs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, parentId, kind }),
+        body: JSON.stringify({ title, parentId, kind, template }),
       });
       if (!res.ok) return;
       const doc = (await res.json()) as DocMeta;
@@ -217,6 +224,16 @@ export default function App() {
 
   return (
     <div className="app">
+      {newOpen && (
+        <NewDocDialog
+          parentId={null}
+          onClose={() => setNewOpen(false)}
+          onCreate={(input) => {
+            setNewOpen(false);
+            void api.createDoc(null, input.title, input.kind, input.template);
+          }}
+        />
+      )}
       {shareOpen && activeId && (
         <ShareDialog
           docId={activeId}
@@ -260,10 +277,7 @@ export default function App() {
             >
               📊
             </button>
-            <button
-              className="btn primary"
-              onClick={() => setPendingNew({ kind: "doc", parentId: null })}
-            >
+            <button className="btn primary" onClick={() => setNewOpen(true)}>
               + New
             </button>
           </span>
@@ -364,10 +378,7 @@ export default function App() {
           <div className="empty">
             <h2>Select or create a document</h2>
             <p>Docs sync in real time. Drag them between folders in the sidebar.</p>
-            <button
-              className="btn primary"
-              onClick={() => setPendingNew({ kind: "doc", parentId: null })}
-            >
+            <button className="btn primary" onClick={() => setNewOpen(true)}>
               + New document
             </button>
           </div>

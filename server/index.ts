@@ -1,4 +1,5 @@
 import { docToMarkdown, sheetToCsv } from "./markdown.js";
+import { buildTemplateUpdate, TEMPLATE_SUMMARIES } from "./templates.js";
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -485,9 +486,20 @@ const api = createServer(async (req, res) => {
       }
     }
 
+    // --- Templates ---
+    if (method === "GET" && path === "/api/templates") {
+      json(res, 200, TEMPLATE_SUMMARIES);
+      return;
+    }
+
     // --- Documents ---
     if (method === "POST" && path === "/api/docs") {
-      const { title, parentId = null, kind = "doc" } = JSON.parse((await readBody(req)) || "{}");
+      const {
+        title,
+        parentId = null,
+        kind = "doc",
+        template = "",
+      } = JSON.parse((await readBody(req)) || "{}");
       const tree = loadTree();
       if (!isFolder(tree, parentId)) {
         json(res, 400, { error: "Parent folder not found" });
@@ -510,7 +522,11 @@ const api = createServer(async (req, res) => {
         members: {},
       });
       saveTree(tree);
-      writeFileSync(docPath(id), Y.encodeStateAsUpdate(new Y.Doc()));
+      const initial =
+        docKind === "doc" && template
+          ? buildTemplateUpdate(String(template))
+          : Y.encodeStateAsUpdate(new Y.Doc());
+      writeFileSync(docPath(id), initial);
       json(res, 201, { id, title: finalTitle, kind: docKind, parentId });
       return;
     }

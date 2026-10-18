@@ -1133,3 +1133,31 @@ body {
   color: var(--text);
   font-size: 12px;
 }
+
+/* New document dialog */
+.new-doc-modal {
+  width: 420px;
+}
+
+.kind-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.kind-toggle button {
+  flex: 1;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.kind-toggle button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}

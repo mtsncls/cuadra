@@ -37,6 +37,7 @@ Open http://localhost:5173 — open the same doc in two browser tabs to see live
 - Per-user permissions: owners and invited members (`Can edit` / `Can view`) see documents in their own sidebar
 - Sharing dialog: link access (`restricted` / anyone with the link can edit / can view) plus a member list
 - Restricted by default: documents you create are private to you until you share them
+- Document templates: meeting notes, project plan, weekly review, reading notes, decision log
 - Export: download documents as Markdown and spreadsheets as CSV (⬇ in the header)
 - Deep-linkable documents (`/?doc=<id>`, `&as=view` for a read-only view)
 - Durable storage on disk (`data/tree.json` metadata + `data/docs/*.ydoc`)
@@ -49,10 +50,11 @@ Open http://localhost:5173 — open the same doc in two browser tabs to see live
 | POST | `/api/folders` | Create folder `{ name, parentId }` |
 | PATCH | `/api/folders/:id` | Rename or move `{ name?, parentId? }` |
 | DELETE | `/api/folders/:id` | Delete folder; children move to its parent |
-| POST | `/api/docs` | Create doc `{ title, parentId, kind }` (`kind: "doc" \| "sheet"`) |
+| POST | `/api/docs` | Create doc `{ title, parentId, kind, template }` (`kind: "doc" \| "sheet"`) |
 | PATCH | `/api/docs/:id` | Rename or move `{ title?, parentId? }` |
 | DELETE | `/api/docs/:id` | Delete doc (moved to `data/trash`) |
 | GET  | `/api/docs/:id/export?format=md\|csv` | Export a doc as Markdown or a sheet as CSV |
+| GET  | `/api/templates` | List built-in document templates |
 | POST | `/api/auth/register` | Create an account `{ name, password }`; sets the session cookie |
 | POST | `/api/auth/login` | Sign in `{ name, password }`; sets the session cookie |
 | POST | `/api/auth/logout` | Clear the session |
@@ -100,6 +102,6 @@ connections (or forces read-only) based on the same rules. Accounts and sessions
 
 ## Roadmap ideas
 
-- Markdown export and doc templates
 - Sheet charts, more functions and column/row resizing
 - Folder-level permissions and an activity feed
+- Custom/user-defined templates
