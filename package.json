@@ -10,7 +10,12 @@
     "dev:web": "vite --config web/vite.config.ts",
     "build": "tsc -p tsconfig.json && vite build --config web/vite.config.ts",
     "start": "NODE_ENV=production tsx server/index.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test:unit": "vitest run --config vitest.unit.config.ts --coverage",
+    "test:contract": "vitest run --config vitest.contract.config.ts --if-present --run",
+    "e2e:smoke": "playwright test --grep @smoke --if-present",
+    "test:mutation": "stryker run --if-present"
   },
   "dependencies": {
     "@hocuspocus/provider": "^3.4.1",
@@ -28,14 +33,23 @@
     "yjs": "^13.6.27"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/supertest": "^7.2.1",
     "@vitejs/plugin-react": "^4.6.0",
+    "@vitest/coverage-v8": "^5.0.5",
     "concurrently": "^9.1.0",
+    "jsdom": "^30.1.3",
+    "supertest": "^7.3.1",
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vitest": "^5.0.5"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
