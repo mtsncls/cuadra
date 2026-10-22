@@ -1,0 +1,102 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint-typecheck:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run typecheck
+
+  unit:
+    name: Unit & Component
+    needs: [lint-typecheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:unit --if-present
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-unit
+          path: coverage/**
+          retention-days: 14
+
+  contract-api:
+    name: API Contract
+    needs: [unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Start API
+        run: |
+          npx tsx server/index.ts &
+          echo $! > .api.pid
+          sleep 5
+      - run: curl -f http://localhost:3001/healthz || exit 1
+      - run: npm run test:contract --if-present
+      - if: always()
+        run: kill $(cat .api.pid) || true
+
+  e2e-smoke:
+    name: E2E Smoke (@smoke)
+    needs: [contract-api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start stack
+        run: |
+          npx tsx server/index.ts &
+          npx vite --config web/vite.config.ts --host 127.0.0.1 --port 5173 &
+          sleep 10
+      - run: curl -f http://localhost:3001/healthz
+      - run: curl -f http://localhost:5173
+      - run: npx playwright test --grep @smoke --if-present
+
+  quality-gate:
+    name: Quality Gate
+    needs: [e2e-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: node scripts/quality-gate/check-all.mjs

@@ -1,0 +1,51 @@
+name: Nightly Quality
+
+on:
+  schedule:
+    - cron: '0 3 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  mutation:
+    name: Mutation Testing (Stryker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:mutation --if-present
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stryker-report
+          path: reports/mutation/**
+          retention-days: 30
+
+  perf:
+    name: Performance (k6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Start stack
+        run: |
+          npx tsx server/index.ts &
+          sleep 5
+          curl -f http://localhost:3001/healthz
+      - uses: grafana/setup-k6-action@v1
+      - run: k6 run qa/performance/smoke.js --out json=qa/reports/k6-summary.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-report
+          path: qa/reports/k6-summary.json
+          retention-days: 30
